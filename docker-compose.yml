@@ -1,0 +1,33 @@
+services:
+  url-shortener:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: url-shortener:local
+    container_name: url-shortener
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      PORT: "8080"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      DB_PATH: "/home/nonroot/shortener.db"
+      BASE_URL: "${BASE_URL:-http://localhost:8080}"
+      TRACKER_WORKERS: "${TRACKER_WORKERS:-2}"
+      TRACKER_BATCH_SIZE: "${TRACKER_BATCH_SIZE:-50}"
+      TRACKER_FLUSH_INTERVAL_MS: "${TRACKER_FLUSH_INTERVAL_MS:-1000}"
+      TRACKER_BUFFER: "${TRACKER_BUFFER:-4096}"
+      READ_TIMEOUT_SEC: "${READ_TIMEOUT_SEC:-10}"
+      WRITE_TIMEOUT_SEC: "${WRITE_TIMEOUT_SEC:-10}"
+      IDLE_TIMEOUT_SEC: "${IDLE_TIMEOUT_SEC:-120}"
+    volumes:
+      - shortener-data:/home/nonroot
+    # No `healthcheck` block on purpose: distroless images have no
+    # shell or curl. The orchestrator's port check (TCP 8080) is
+    # enough for `docker compose ps` to report health. For a
+    # richer HTTP-level check, switch the runtime image to
+    # `gcr.io/distroless/base-debian12` and use `wget --spider`.
+
+volumes:
+  shortener-data:
+    name: url-shortener-data

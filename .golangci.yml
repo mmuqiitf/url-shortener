@@ -1,0 +1,37 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck      # unchecked errors
+    - gosimple      # simplifications
+    - govet         # standard go vet
+    - ineffassign   # unused assignments
+    - staticcheck   # extensive static analysis
+    - unused        # unused identifiers
+    - gofmt         # formatting
+    - goimports     # import ordering
+    - misspell      # spelling
+    - bodyclose     # http body close
+    - contextcheck  # ctx propagation
+
+linters-settings:
+  goimports:
+    local-prefixes: github.com/mmuqiitf/url-shortener
+  misspell:
+    locale: US
+  govet:
+    enable-all: true
+    disable:
+      - shadow  # too noisy for beginners
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+        - gosimple
+        - ineffassign
+        - staticcheck
