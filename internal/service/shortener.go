@@ -32,6 +32,13 @@ type Repository interface {
 	DeactivateByCode(ctx context.Context, code string) error
 }
 
+// Cache is the subset of caching functionality the service needs.
+type Cache interface {
+	Get(ctx context.Context, code string) (model.Link, bool)
+	Set(ctx context.Context, link model.Link, ttl time.Duration)
+	Delete(ctx context.Context, code string)
+}
+
 // Clock is an indirection over time.Now. Used by tests to inject a
 // deterministic clock; the production wiring uses time.Now.
 type Clock func() time.Time
@@ -39,18 +46,21 @@ type Clock func() time.Time
 // Shortener is the business-logic facade for the URL shortener.
 type Shortener struct {
 	repo   Repository
+	cache  Cache
 	clock  Clock
 	codeLn int
 	maxGen int // max generation attempts before giving up
 }
 
 // New constructs a Shortener. The clock defaults to time.Now if nil.
-func New(repo Repository, clock Clock) *Shortener {
+// Cache can be nil if caching is disabled.
+func New(repo Repository, cache Cache, clock Clock) *Shortener {
 	if clock == nil {
 		clock = func() time.Time { return time.Now().UTC() }
 	}
 	return &Shortener{
 		repo:   repo,
+		cache:  cache,
 		clock:  clock,
 		codeLn: codec.DefaultLength,
 		maxGen: 8,
@@ -98,11 +108,18 @@ func (s *Shortener) Create(ctx context.Context, in model.CreateLinkInput) (model
 	return link, nil
 }
 
-// GetByCode is a thin pass-through that the service exposes for symmetry
-// with the repository, while letting callers depend on the service.
+// GetByCode fetches a link by code, checking the cache first.
 func (s *Shortener) GetByCode(ctx context.Context, code string) (model.Link, error) {
 	if err := codec.Validate(code); err != nil {
 		return model.Link{}, model.ErrInvalidCode.Wrap(err)
+	}
+	if s.cache != nil {
+		if l, hit := s.cache.Get(ctx, code); hit {
+			if apiErr := s.checkAvailability(l); apiErr != nil {
+				return model.Link{}, apiErr
+			}
+			return l, nil
+		}
 	}
 	l, err := s.repo.GetByCode(ctx, code)
 	if err != nil {
@@ -111,6 +128,9 @@ func (s *Shortener) GetByCode(ctx context.Context, code string) (model.Link, err
 	if apiErr := s.checkAvailability(l); apiErr != nil {
 		return model.Link{}, apiErr
 	}
+	if s.cache != nil {
+		s.cache.Set(ctx, l, 10*time.Minute)
+	}
 	return l, nil
 }
 
@@ -118,18 +138,7 @@ func (s *Shortener) GetByCode(ctx context.Context, code string) (model.Link, err
 // availability rules as GetByCode and is the canonical entry point
 // for `GET /{code}`.
 func (s *Shortener) Resolve(ctx context.Context, code string) (model.Link, error) {
-	if err := codec.Validate(code); err != nil {
-		return model.Link{}, model.ErrInvalidCode.Wrap(err)
-	}
-	l, err := s.repo.GetByCode(ctx, code)
-	if err != nil {
-		return model.Link{}, err
-	}
-	avail := s.checkAvailability(l)
-	if avail != nil {
-		return model.Link{}, avail
-	}
-	return l, nil
+	return s.GetByCode(ctx, code)
 }
 
 // List returns up to `limit` links starting at `offset`, with both
@@ -144,10 +153,13 @@ func (s *Shortener) List(ctx context.Context, limit, offset int) ([]model.Link, 
 	return s.repo.List(ctx, limit, offset)
 }
 
-// Delete soft-deletes a link.
+// Delete soft-deletes a link and clears it from the cache.
 func (s *Shortener) Delete(ctx context.Context, code string) error {
 	if err := codec.Validate(code); err != nil {
 		return model.ErrInvalidCode.Wrap(err)
+	}
+	if s.cache != nil {
+		s.cache.Delete(ctx, code)
 	}
 	return s.repo.DeactivateByCode(ctx, code)
 }

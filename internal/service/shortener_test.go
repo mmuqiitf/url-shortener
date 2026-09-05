@@ -72,7 +72,7 @@ func (f *fakeRepo) DeactivateByCode(_ context.Context, code string) error {
 
 func TestCreate_Success(t *testing.T) {
 	t.Parallel()
-	svc := New(newFakeRepo(), nil)
+	svc := New(newFakeRepo(), nil, nil)
 	got, err := svc.Create(context.Background(), model.CreateLinkInput{
 		LongURL: "https://example.com/long/path",
 	})
@@ -92,7 +92,7 @@ func TestCreate_Success(t *testing.T) {
 
 func TestCreate_CustomAlias(t *testing.T) {
 	t.Parallel()
-	svc := New(newFakeRepo(), nil)
+	svc := New(newFakeRepo(), nil, nil)
 	got, err := svc.Create(context.Background(), model.CreateLinkInput{
 		LongURL:     "https://example.com",
 		CustomAlias: "promo",
@@ -107,7 +107,7 @@ func TestCreate_CustomAlias(t *testing.T) {
 
 func TestCreate_InvalidURL(t *testing.T) {
 	t.Parallel()
-	svc := New(newFakeRepo(), nil)
+	svc := New(newFakeRepo(), nil, nil)
 	cases := []string{
 		"",
 		"   ",
@@ -129,7 +129,7 @@ func TestCreate_InvalidURL(t *testing.T) {
 
 func TestCreate_InvalidAlias(t *testing.T) {
 	t.Parallel()
-	svc := New(newFakeRepo(), nil)
+	svc := New(newFakeRepo(), nil, nil)
 	_, err := svc.Create(context.Background(), model.CreateLinkInput{
 		LongURL: "https://example.com", CustomAlias: "bad alias!",
 	})
@@ -140,7 +140,7 @@ func TestCreate_InvalidAlias(t *testing.T) {
 
 func TestCreate_AliasCollision(t *testing.T) {
 	t.Parallel()
-	svc := New(newFakeRepo(), nil)
+	svc := New(newFakeRepo(), nil, nil)
 	in := model.CreateLinkInput{LongURL: "https://example.com", CustomAlias: "x"}
 	if _, err := svc.Create(context.Background(), in); err != nil {
 		t.Fatalf("first create: %v", err)
@@ -160,7 +160,7 @@ func TestResolve_Expired(t *testing.T) {
 	_ = repo.Create(context.Background(), model.Link{
 		Code: "exp", LongURL: "https://e", ExpiresAt: &expired, IsActive: true,
 	})
-	svc := New(repo, clock)
+	svc := New(repo, nil, clock)
 	_, err := svc.Resolve(context.Background(), "exp")
 	if !errors.Is(err, model.ErrLinkExpired) {
 		t.Errorf("got %v, want ErrLinkExpired", err)
@@ -173,7 +173,7 @@ func TestResolve_Inactive(t *testing.T) {
 	_ = repo.Create(context.Background(), model.Link{
 		Code: "off", LongURL: "https://e", IsActive: false,
 	})
-	svc := New(repo, nil)
+	svc := New(repo, nil, nil)
 	_, err := svc.Resolve(context.Background(), "off")
 	if !errors.Is(err, model.ErrLinkInactive) {
 		t.Errorf("got %v, want ErrLinkInactive", err)
@@ -186,12 +186,71 @@ func TestResolve_Success(t *testing.T) {
 	_ = repo.Create(context.Background(), model.Link{
 		Code: "ok", LongURL: "https://e", IsActive: true,
 	})
-	svc := New(repo, nil)
+	svc := New(repo, nil, nil)
 	got, err := svc.Resolve(context.Background(), "ok")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 	if got.LongURL != "https://e" {
 		t.Errorf("LongURL: %q", got.LongURL)
+	}
+}
+
+type fakeCache struct {
+	data map[string]model.Link
+}
+
+func (c *fakeCache) Get(_ context.Context, code string) (model.Link, bool) {
+	l, ok := c.data[code]
+	return l, ok
+}
+func (c *fakeCache) Set(_ context.Context, link model.Link, _ time.Duration) {
+	c.data[link.Code] = link
+}
+func (c *fakeCache) Delete(_ context.Context, code string) {
+	delete(c.data, code)
+}
+
+func TestResolve_WithCache(t *testing.T) {
+	t.Parallel()
+	repo := newFakeRepo()
+	_ = repo.Create(context.Background(), model.Link{
+		Code: "cached", LongURL: "https://cached.example", IsActive: true,
+	})
+	fc := &fakeCache{data: map[string]model.Link{}}
+	svc := New(repo, fc, nil)
+
+	// First call - cache miss, fetches from repo and caches
+	got, err := svc.Resolve(context.Background(), "cached")
+	if err != nil {
+		t.Fatalf("first Resolve: %v", err)
+	}
+	if got.LongURL != "https://cached.example" {
+		t.Errorf("got %q, want https://cached.example", got.LongURL)
+	}
+
+	// Verify it was stored in cache
+	if _, ok := fc.data["cached"]; !ok {
+		t.Errorf("expected item to be in cache")
+	}
+
+	// Delete from repo directly to verify subsequent Resolve hits cache
+	delete(repo.data, "cached")
+
+	cachedGot, err := svc.Resolve(context.Background(), "cached")
+	if err != nil {
+		t.Fatalf("second Resolve (cache hit): %v", err)
+	}
+	if cachedGot.LongURL != "https://cached.example" {
+		t.Errorf("got %q, want https://cached.example from cache", cachedGot.LongURL)
+	}
+
+	// Delete via service should invalidate cache
+	if err := svc.Delete(context.Background(), "cached"); err != nil {
+		// repo delete returns NotFound because we manually deleted it above, which is expected
+		_ = err
+	}
+	if _, ok := fc.data["cached"]; ok {
+		t.Errorf("expected cache to be cleared after Delete")
 	}
 }

@@ -113,10 +113,25 @@ type errorResponse struct {
 
 // --- handlers -----------------------------------------------------------
 
+// healthz godoc
+// @Summary      Health check
+// @Description  Returns status ok if the server is alive
+// @Tags         system
+// @Produce      json
+// @Success      200  {object}  map[string]string
+// @Router       /healthz [get]
 func (h *Handler) healthz(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// readyz godoc
+// @Summary      Readiness probe
+// @Description  Verifies the database and tracker dependencies are ready
+// @Tags         system
+// @Produce      json
+// @Success      200  {object}  map[string]string
+// @Failure      503  {object}  map[string]string
+// @Router       /readyz [get]
 func (h *Handler) readyz(w http.ResponseWriter, r *http.Request) {
 	if h.pinger != nil {
 		if err := h.pinger.Ping(r.Context()); err != nil {
@@ -130,6 +145,18 @@ func (h *Handler) readyz(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
+// create godoc
+// @Summary      Shorten a URL
+// @Description  Creates a shortened link with optional custom alias and expiration timestamp
+// @Tags         links
+// @Accept       json
+// @Produce      json
+// @Param        request body createRequest true "URL to shorten"
+// @Success      201  {object}  linkResponse
+// @Failure      400  {object}  errorResponse
+// @Failure      409  {object}  errorResponse
+// @Failure      429  {object}  errorResponse
+// @Router       /api/v1/links [post]
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	// Limit request body to 1MB to protect against unbounded memory consumption
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
@@ -167,6 +194,17 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, toLinkResponse(link, h.baseURL))
 }
 
+// get godoc
+// @Summary      Get link details
+// @Description  Retrieves shortened link metadata and click count by short code
+// @Tags         links
+// @Produce      json
+// @Param        code path string true "Short Code"
+// @Success      200  {object}  linkResponse
+// @Failure      400  {object}  errorResponse
+// @Failure      404  {object}  errorResponse
+// @Failure      410  {object}  errorResponse
+// @Router       /api/v1/links/{code} [get]
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
 	link, err := h.svc.GetByCode(r.Context(), code)
@@ -177,6 +215,15 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toLinkResponse(link, h.baseURL))
 }
 
+// list godoc
+// @Summary      List shortened links
+// @Description  Returns a paginated list of all created shortened links
+// @Tags         links
+// @Produce      json
+// @Param        limit query int false "Max results (default: 50, max: 200)"
+// @Param        offset query int false "Pagination offset"
+// @Success      200  {object}  listResponse
+// @Router       /api/v1/links [get]
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
@@ -192,6 +239,15 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, listResponse{Items: out, Total: len(out)})
 }
 
+// delete godoc
+// @Summary      Deactivate link
+// @Description  Soft-deletes a shortened link by short code
+// @Tags         links
+// @Param        code path string true "Short Code"
+// @Success      204  "No Content"
+// @Failure      400  {object}  errorResponse
+// @Failure      404  {object}  errorResponse
+// @Router       /api/v1/links/{code} [delete]
 func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
 	if err := h.svc.Delete(r.Context(), code); err != nil {
@@ -201,6 +257,15 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// redirect godoc
+// @Summary      Follow short link
+// @Description  Redirects client to the original URL and asynchronously records a click event
+// @Tags         redirect
+// @Param        code path string true "Short Code"
+// @Success      301  "Moved Permanently"
+// @Failure      404  {string}  string "Not Found HTML"
+// @Failure      410  {string}  string "Expired / Inactive HTML"
+// @Router       /{code} [get]
 func (h *Handler) redirect(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
 	link, err := h.svc.Resolve(r.Context(), code)

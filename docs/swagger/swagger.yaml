@@ -1,0 +1,233 @@
+basePath: /
+definitions:
+  handler.createRequest:
+    properties:
+      custom_alias:
+        type: string
+      expires_at:
+        type: string
+      url:
+        type: string
+    type: object
+  handler.errorBody:
+    properties:
+      code:
+        type: string
+      message:
+        type: string
+    type: object
+  handler.errorResponse:
+    properties:
+      error:
+        $ref: '#/definitions/handler.errorBody'
+    type: object
+  handler.linkResponse:
+    properties:
+      clicks:
+        type: integer
+      code:
+        type: string
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      is_active:
+        type: boolean
+      long_url:
+        type: string
+      short_url:
+        type: string
+    type: object
+  handler.listResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/handler.linkResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: API Support
+    url: https://github.com/mmuqiitf/url-shortener
+  description: Production-grade URL Shortener API written in Go with GORM, in-memory
+    caching, rate limiting, and click tracking.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: http://swagger.io/terms/
+  title: URL Shortener API
+  version: "1.0"
+paths:
+  /{code}:
+    get:
+      description: Redirects client to the original URL and asynchronously records
+        a click event
+      parameters:
+      - description: Short Code
+        in: path
+        name: code
+        required: true
+        type: string
+      responses:
+        "301":
+          description: Moved Permanently
+        "404":
+          description: Not Found HTML
+          schema:
+            type: string
+        "410":
+          description: Expired / Inactive HTML
+          schema:
+            type: string
+      summary: Follow short link
+      tags:
+      - redirect
+  /api/v1/links:
+    get:
+      description: Returns a paginated list of all created shortened links
+      parameters:
+      - description: 'Max results (default: 50, max: 200)'
+        in: query
+        name: limit
+        type: integer
+      - description: Pagination offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.listResponse'
+      summary: List shortened links
+      tags:
+      - links
+    post:
+      consumes:
+      - application/json
+      description: Creates a shortened link with optional custom alias and expiration
+        timestamp
+      parameters:
+      - description: URL to shorten
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.createRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.linkResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Shorten a URL
+      tags:
+      - links
+  /api/v1/links/{code}:
+    delete:
+      description: Soft-deletes a shortened link by short code
+      parameters:
+      - description: Short Code
+        in: path
+        name: code
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Deactivate link
+      tags:
+      - links
+    get:
+      description: Retrieves shortened link metadata and click count by short code
+      parameters:
+      - description: Short Code
+        in: path
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.linkResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "410":
+          description: Gone
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Get link details
+      tags:
+      - links
+  /healthz:
+    get:
+      description: Returns status ok if the server is alive
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Health check
+      tags:
+      - system
+  /readyz:
+    get:
+      description: Verifies the database and tracker dependencies are ready
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Readiness probe
+      tags:
+      - system
+swagger: "2.0"

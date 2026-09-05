@@ -1,4 +1,18 @@
 // Package main is the entrypoint for the URL shortener HTTP service.
+//
+// @title           URL Shortener API
+// @version         1.0
+// @description     Production-grade URL Shortener API written in Go with GORM, in-memory caching, rate limiting, and click tracking.
+// @termsOfService  http://swagger.io/terms/
+
+// @contact.name   API Support
+// @contact.url    https://github.com/mmuqiitf/url-shortener
+
+// @license.name  MIT
+// @license.url   https://opensource.org/licenses/MIT
+
+// @host      localhost:8080
+// @BasePath  /
 package main
 
 import (
@@ -14,7 +28,11 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
+	"golang.org/x/time/rate"
 
+	_ "github.com/mmuqiitf/url-shortener/docs/swagger"
+	"github.com/mmuqiitf/url-shortener/internal/cache"
 	"github.com/mmuqiitf/url-shortener/internal/config"
 	"github.com/mmuqiitf/url-shortener/internal/handler"
 	"github.com/mmuqiitf/url-shortener/internal/middleware"
@@ -57,6 +75,9 @@ func run() error {
 	}
 	defer repo.Close()
 
+	// Initialize in-memory LRU read cache (capacity: 10,000 items)
+	memCache := cache.NewMemoryCache(10000)
+
 	// Initialize click-tracking background worker pool
 	tr := tracker.New(repo, logger, tracker.Config{
 		Workers:       cfg.TrackerWorkers,
@@ -66,7 +87,7 @@ func run() error {
 	})
 	tr.Run(ctx)
 
-	svc := service.New(repo, nil)
+	svc := service.New(repo, memCache, nil)
 	h := handler.New(svc, tr, repo, logger, cfg.BaseURL)
 
 	r := chi.NewRouter()
@@ -74,6 +95,16 @@ func run() error {
 	r.Use(middleware.Logging(logger))
 	r.Use(middleware.Recover(logger))
 	r.Use(middleware.CORS("*"))
+	r.Use(middleware.RateLimit(rate.Limit(30), 60)) // 30 req/s with burst of 60 per IP
+
+	// Mount interactive Swagger UI
+	r.Get("/swagger", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/swagger/index.html", http.StatusMovedPermanently)
+	})
+	r.Get("/swagger/*", httpSwagger.Handler(
+		httpSwagger.URL("/swagger/doc.json"),
+	))
+
 	r.Mount("/", h.Routes())
 
 	srv := &http.Server{
@@ -87,6 +118,7 @@ func run() error {
 	serverErr := make(chan error, 1)
 	go func() {
 		logger.Info("server starting", "port", cfg.Port, "base_url", cfg.BaseURL)
+		logger.Info("swagger docs available at: " + cfg.BaseURL + "/swagger/index.html")
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErr <- err
 		}
