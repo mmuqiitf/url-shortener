@@ -5,7 +5,7 @@ kept simple enough to read end-to-end in an afternoon, but uses the same
 patterns you would see in a real service:
 
 - Chi router + `net/http`
-- SQLite via the pure-Go `modernc.org/sqlite` driver (no CGO)
+- GORM + pure-Go SQLite driver (`github.com/glebarez/sqlite`, no CGO)
 - Click-tracking worker pool
 - Graceful shutdown
 - Multi-stage Docker build (distroless final image)
@@ -62,7 +62,7 @@ cmd/server         HTTP entrypoint
 internal/config    env-var loading
 internal/model     domain types (Link, APIError)
 internal/codec     base62 short-code generation
-internal/repository  SQLite + migrations
+internal/repository  GORM + SQLite (AutoMigrate)
 internal/service   business logic
 internal/tracker   click-event worker pool
 internal/handler   HTTP handlers (chi)

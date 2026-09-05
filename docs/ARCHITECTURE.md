@@ -24,13 +24,13 @@ HTTP request →  │ middleware: requestid, recover, log, │
                 └────────────┬─────────────────────────┘
                              ▼
                 ┌──────────────────────────────────────┐
-                │  repository (SQLite)                 │
-                │   - CRUD on links table              │
-                │   - batch increment clicks           │
+                │  repository (GORM + SQLite)          │
+                │   - CRUD on LinkModel                │
+                │   - batch increment clicks (GORM tx) │
                 └────────────┬─────────────────────────┘
                              ▼
                 ┌──────────────────────────────────────┐
-                │  SQLite (modernc.org/sqlite)         │
+                │  SQLite (glebarez/sqlite pure-Go)    │
                 └──────────────────────────────────────┘
 
 Background:  tracker ──consumes──► repository.BatchIncrementClicks
@@ -102,9 +102,9 @@ Background:  tracker ──consumes──► repository.BatchIncrementClicks
   code cannot import them. This is the conventional way to draw an
   API boundary in Go.
 
-- **Embed for migrations.** The `migrate.go` file uses
-  `//go:embed migrations/*.sql` to compile the SQL files into the
-  binary. The container image does not need the filesystem at runtime.
+- **AutoMigrate with GORM.** The `sqlite.go` repository uses
+  GORM's `AutoMigrate(&LinkModel{})` to automatically maintain table
+  schemas, column types, and indexes on startup.
 
 - **`slog` for logs.** `log/slog` (stdlib, Go 1.21+) gives us
   structured JSON logs without a third-party dependency. Every log

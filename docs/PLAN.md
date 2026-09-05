@@ -35,10 +35,8 @@ url-shortener/
 │   │   ├── base62.go               # random short-code generation + validation
 │   │   └── base62_test.go
 │   ├── repository/
-│   │   ├── sqlite.go               # SQLite implementation
-│   │   ├── sqlite_test.go          # in-memory DB tests
-│   │   ├── migrate.go              # embedded-SQL migration runner
-│   │   └── migrations/0001_init.sql
+│   │   ├── sqlite.go               # GORM + SQLite implementation
+│   │   └── sqlite_test.go          # temporary SQLite DB tests
 │   ├── service/
 │   │   ├── shortener.go            # business logic
 │   │   └── shortener_test.go
