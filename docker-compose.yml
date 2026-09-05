@@ -1,4 +1,18 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: url-shortener-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   url-shortener:
     build:
       context: .
@@ -6,6 +20,9 @@ services:
     image: url-shortener:local
     container_name: url-shortener
     restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
     ports:
       - "${PORT:-8080}:8080"
     environment:
@@ -13,6 +30,7 @@ services:
       LOG_LEVEL: "${LOG_LEVEL:-info}"
       DB_PATH: "/home/nonroot/shortener.db"
       BASE_URL: "${BASE_URL:-http://localhost:8080}"
+      REDIS_ADDR: "redis:6379"
       TRACKER_WORKERS: "${TRACKER_WORKERS:-2}"
       TRACKER_BATCH_SIZE: "${TRACKER_BATCH_SIZE:-50}"
       TRACKER_FLUSH_INTERVAL_MS: "${TRACKER_FLUSH_INTERVAL_MS:-1000}"
@@ -22,12 +40,9 @@ services:
       IDLE_TIMEOUT_SEC: "${IDLE_TIMEOUT_SEC:-120}"
     volumes:
       - shortener-data:/home/nonroot
-    # No `healthcheck` block on purpose: distroless images have no
-    # shell or curl. The orchestrator's port check (TCP 8080) is
-    # enough for `docker compose ps` to report health. For a
-    # richer HTTP-level check, switch the runtime image to
-    # `gcr.io/distroless/base-debian12` and use `wget --spider`.
 
 volumes:
   shortener-data:
     name: url-shortener-data
+  redis-data:
+    name: url-shortener-redis-data

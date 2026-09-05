@@ -33,6 +33,11 @@ type Config struct {
 	TrackerBatch   int           // env: TRACKER_BATCH_SIZE,       default: 50
 	TrackerFlush   time.Duration // env: TRACKER_FLUSH_INTERVAL_MS default: 1000ms
 
+	RedisAddr     string        // env: REDIS_ADDR,               default: localhost:6379
+	RedisPassword string        // env: REDIS_PASSWORD,           default: ""
+	RedisDB       int           // env: REDIS_DB,                 default: 0
+	RedisTTL      time.Duration // env: REDIS_TTL_SEC,            default: 600s
+
 	shutdownTimeout time.Duration // env: SHUTDOWN_TIMEOUT_MS, default: 15000ms
 }
 
@@ -51,6 +56,10 @@ func Load() (*Config, error) {
 		TrackerBuffer:   getenvInt("TRACKER_BUFFER", 4096),
 		TrackerBatch:    getenvInt("TRACKER_BATCH_SIZE", 50),
 		TrackerFlush:    time.Duration(getenvInt("TRACKER_FLUSH_INTERVAL_MS", 1000)) * time.Millisecond,
+		RedisAddr:       getenv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword:   getenv("REDIS_PASSWORD", ""),
+		RedisDB:         getenvInt("REDIS_DB", 0),
+		RedisTTL:        time.Duration(getenvInt("REDIS_TTL_SEC", 600)) * time.Second,
 		shutdownTimeout: time.Duration(getenvInt("SHUTDOWN_TIMEOUT_MS", 15000)) * time.Millisecond,
 	}
 

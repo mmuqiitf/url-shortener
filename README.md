@@ -6,6 +6,9 @@ patterns you would see in a real service:
 
 - Chi router + `net/http`
 - GORM + pure-Go SQLite driver (`github.com/glebarez/sqlite`, no CGO)
+- Redis distributed cache with in-memory LRU fallback (`github.com/redis/go-redis/v9`)
+- Token bucket rate limiting per client IP (`golang.org/x/time/rate`)
+- Interactive Swagger / OpenAPI documentation UI (`/swagger/index.html`)
 - Click-tracking worker pool
 - Graceful shutdown
 - Multi-stage Docker build (distroless final image)
@@ -17,7 +20,8 @@ patterns you would see in a real service:
 
 ```bash
 docker compose up --build
-# -> http://localhost:8080/healthz
+# App: http://localhost:8080/healthz
+# Swagger UI: http://localhost:8080/swagger/index.html
 ```
 
 ### Run locally
@@ -25,6 +29,7 @@ docker compose up --build
 ```bash
 go run ./cmd/server
 # -> http://localhost:8080/healthz
+# -> http://localhost:8080/swagger/index.html
 ```
 
 The server creates `./data/shortener.db` on first run. To reset it, just
@@ -53,21 +58,22 @@ curl http://localhost:8080/api/v1/links
 curl -X DELETE http://localhost:8080/api/v1/links/ex
 ```
 
-Full reference: see [`docs/API.md`](docs/API.md).
+Full reference: see [`docs/API.md`](docs/API.md) or open **[`/swagger/index.html`](http://localhost:8080/swagger/index.html)**.
 
 ## Project layout
 
 ```
 cmd/server         HTTP entrypoint
 internal/config    env-var loading
+internal/cache     Redis + in-memory LRU caching
 internal/model     domain types (Link, APIError)
 internal/codec     base62 short-code generation
 internal/repository  GORM + SQLite (AutoMigrate)
 internal/service   business logic
 internal/tracker   click-event worker pool
 internal/handler   HTTP handlers (chi)
-internal/middleware  request-id, logging, recover, CORS
-docs/              ARCHITECTURE, CONCURRENCY, API, DEVELOPMENT, PLAN
+internal/middleware  request-id, logging, recover, CORS, rate limiting
+docs/              ARCHITECTURE, CONCURRENCY, API, DEVELOPMENT, PLAN, swagger
 scripts/           smoke.sh
 ```
 

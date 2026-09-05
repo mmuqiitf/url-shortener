@@ -33,6 +33,10 @@ list. The most useful ones:
 | `PORT` | `8080` | HTTP listen port |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `DB_PATH` | `./data/shortener.db` | SQLite file path |
+| `REDIS_ADDR` | `localhost:6379` | Redis server address (falls back to memory LRU if unreachable) |
+| `REDIS_PASSWORD` | `""` | Redis authentication password |
+| `REDIS_DB` | `0` | Redis database number |
+| `REDIS_TTL_SEC` | `600` | Redis link cache TTL in seconds |
 | `BASE_URL` | `http://localhost:<port>` | Public URL prefix used in `short_url` |
 | `TRACKER_WORKERS` | `2` | Click-event worker count |
 | `TRACKER_BATCH_SIZE` | `50` | Max events per batch flush |

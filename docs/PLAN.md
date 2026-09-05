@@ -29,6 +29,10 @@ url-shortener/
 ├── internal/
 │   ├── config/
 │   │   └── config.go               # env loading with defaults
+│   ├── cache/
+│   │   ├── cache.go                # Cache interface + in-memory LRU
+│   │   ├── cache_test.go
+│   │   └── redis.go                # Redis distributed cache implementation
 │   ├── model/
 │   │   └── link.go                 # domain types: Link, CreateLinkRequest, APIError
 │   ├── codec/
@@ -50,7 +54,9 @@ url-shortener/
 │       ├── requestid.go
 │       ├── logging.go
 │       ├── recover.go
-│       └── cors.go
+│       ├── cors.go
+│       ├── ratelimit.go            # token bucket rate limiter
+│       └── ratelimit_test.go
 ├── docs/
 │   ├── PLAN.md                     # this file
 │   ├── ARCHITECTURE.md

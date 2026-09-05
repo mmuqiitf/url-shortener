@@ -1,6 +1,7 @@
 # API Reference
 
 Base URL (default local): `http://localhost:8080`
+Interactive Swagger UI: `http://localhost:8080/swagger/index.html`
 
 All responses are JSON. Errors use the envelope:
 

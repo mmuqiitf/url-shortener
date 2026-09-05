@@ -73,10 +73,21 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("repository open: %w", err)
 	}
-	defer repo.Close()
-
-	// Initialize in-memory LRU read cache (capacity: 10,000 items)
-	memCache := cache.NewMemoryCache(10000)
+	// Initialize cache (Redis with in-memory LRU fallback)
+	var linkCache service.Cache
+	if cfg.RedisAddr != "" {
+		redisClient, err := cache.NewRedisCache(ctx, cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+		if err != nil {
+			logger.Warn("redis unavailable, falling back to in-memory LRU cache", "err", err, "addr", cfg.RedisAddr)
+			linkCache = cache.NewMemoryCache(10000)
+		} else {
+			logger.Info("connected to redis cache", "addr", cfg.RedisAddr)
+			linkCache = redisClient
+			defer redisClient.Close()
+		}
+	} else {
+		linkCache = cache.NewMemoryCache(10000)
+	}
 
 	// Initialize click-tracking background worker pool
 	tr := tracker.New(repo, logger, tracker.Config{
@@ -87,7 +98,7 @@ func run() error {
 	})
 	tr.Run(ctx)
 
-	svc := service.New(repo, memCache, nil)
+	svc := service.New(repo, linkCache, nil)
 	h := handler.New(svc, tr, repo, logger, cfg.BaseURL)
 
 	r := chi.NewRouter()

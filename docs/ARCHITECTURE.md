@@ -24,6 +24,11 @@ HTTP request →  │ middleware: requestid, recover, log, │
                 └────────────┬─────────────────────────┘
                              ▼
                 ┌──────────────────────────────────────┐
+                │  cache.Cache (Redis / Memory LRU)    │
+                │   - sub-millisecond read hit         │
+                └────────────┬─────────────────────────┘
+                             ▼
+                ┌──────────────────────────────────────┐
                 │  repository (GORM + SQLite)          │
                 │   - CRUD on LinkModel                │
                 │   - batch increment clicks (GORM tx) │
@@ -71,13 +76,14 @@ Background:  tracker ──consumes──► repository.BatchIncrementClicks
 | Package | Responsibility |
 |---|---|
 | `config` | Reads env vars, applies defaults, validates. The only place that touches `os.Getenv`. |
+| `cache` | Distributed Redis caching with in-memory LRU fallback. |
 | `model` | Domain types and the `APIError` type with an `Is()` method so `errors.Is` works across clones. |
 | `codec` | Base62 alphabet, random short-code generation via `crypto/rand`, regex validation. |
-| `repository` | All SQL. Defines the schema and runs embedded migrations. Implements the interfaces consumed by `service` and `tracker`. |
-| `service` | Business rules: URL normalization, alias validation, collision retry, TTL filtering. |
+| `repository` | Database persistence via GORM + SQLite with AutoMigrate. |
+| `service` | Business rules: URL normalization, alias validation, collision retry, read-through caching. |
 | `tracker` | Click-event worker pool. The concurrency centerpiece. |
-| `handler` | HTTP boundary. Decodes requests, encodes responses, maps errors. |
-| `middleware` | Cross-cutting: request-id, structured logging, panic recovery, CORS. |
+| `handler` | HTTP boundary. Decodes requests, encodes responses, maps errors, Swagger docs. |
+| `middleware` | Cross-cutting: request-id, structured logging, panic recovery, CORS, rate limiting. |
 | `cmd/server` | Composition root. Wires everything together and handles graceful shutdown. |
 
 ## Go-specific patterns
