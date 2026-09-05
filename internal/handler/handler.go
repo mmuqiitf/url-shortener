@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -130,13 +131,16 @@ func (h *Handler) readyz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
+	// Limit request body to 1MB to protect against unbounded memory consumption
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
 	var req createRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, model.NewAPIError(400, "BAD_JSON", "request body is not valid JSON").Wrap(err))
+		h.writeError(w, r, model.NewAPIError(400, "BAD_JSON", "request body is not valid JSON").Wrap(err))
 		return
 	}
 	if req.URL == "" {
-		writeError(w, model.NewAPIError(400, "MISSING_URL", "field 'url' is required"))
+		h.writeError(w, r, model.NewAPIError(400, "MISSING_URL", "field 'url' is required"))
 		return
 	}
 
@@ -144,7 +148,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
 		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
 		if err != nil {
-			writeError(w, model.NewAPIError(400, "BAD_EXPIRES_AT", "expires_at must be RFC3339").Wrap(err))
+			h.writeError(w, r, model.NewAPIError(400, "BAD_EXPIRES_AT", "expires_at must be RFC3339").Wrap(err))
 			return
 		}
 		t = t.UTC()
@@ -157,7 +161,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:   exp,
 	})
 	if err != nil {
-		writeError(w, err)
+		h.writeError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, toLinkResponse(link, h.baseURL))
@@ -167,7 +171,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
 	link, err := h.svc.GetByCode(r.Context(), code)
 	if err != nil {
-		writeError(w, err)
+		h.writeError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, toLinkResponse(link, h.baseURL))
@@ -178,7 +182,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	items, err := h.svc.List(r.Context(), limit, offset)
 	if err != nil {
-		writeError(w, err)
+		h.writeError(w, r, err)
 		return
 	}
 	out := make([]linkResponse, len(items))
@@ -191,7 +195,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
 	if err := h.svc.Delete(r.Context(), code); err != nil {
-		writeError(w, err)
+		h.writeError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -260,7 +264,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // If the error is (or wraps) a *model.APIError, we use its status,
 // code and message. Otherwise we log the underlying error and return
 // a generic 500 — we never leak internal error strings to the client.
-func writeError(w http.ResponseWriter, err error) {
+func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var apiErr *model.APIError
 	if errors.As(err, &apiErr) {
 		writeJSON(w, apiErr.Status, errorResponse{Error: errorBody{
@@ -268,6 +272,7 @@ func writeError(w http.ResponseWriter, err error) {
 		}})
 		return
 	}
+	h.log.Error("internal server error", "err", err, "path", r.URL.Path, "method", r.Method)
 	writeJSON(w, http.StatusInternalServerError, errorResponse{Error: errorBody{
 		Code: "INTERNAL", Message: "internal server error",
 	}})
@@ -289,7 +294,11 @@ func writeRedirectError(w http.ResponseWriter, status int, code string) {
 // when present (typical when running behind a reverse proxy).
 func clientIP(r *http.Request) string {
 	if v := r.Header.Get("X-Forwarded-For"); v != "" {
-		return v
+		// If comma-separated (e.g. client, proxy1, proxy2), pick the first IP
+		if idx := strings.IndexByte(v, ','); idx != -1 {
+			return strings.TrimSpace(v[:idx])
+		}
+		return strings.TrimSpace(v)
 	}
 	return r.RemoteAddr
 }

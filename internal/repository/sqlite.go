@@ -51,6 +51,20 @@ func Open(ctx context.Context, dsn string) (*Repository, error) {
 		return nil, fmt.Errorf("repository: ping: %w", err)
 	}
 
+	// Apply production SQLite pragmas:
+	// - WAL (Write-Ahead Logging) enables concurrent readers without blocking writes
+	// - busy_timeout avoids immediate lock failures under concurrency
+	// - foreign_keys ensures referential integrity
+	const pragmas = `
+		PRAGMA journal_mode = WAL;
+		PRAGMA busy_timeout = 5000;
+		PRAGMA foreign_keys = ON;
+	`
+	if _, err := db.ExecContext(ctx, pragmas); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("repository: set pragmas: %w", err)
+	}
+
 	if err := applyMigrations(ctx, db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("repository: migrate: %w", err)

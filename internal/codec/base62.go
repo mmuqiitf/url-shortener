@@ -35,21 +35,38 @@ var validCodeRe = regexp.MustCompile(`^[0-9A-Za-z]{1,64}$`)
 // Generate returns a random short code of the given length.
 //
 // We read random bytes from crypto/rand (NOT math/rand) so codes are
-// unpredictable. We use modulo arithmetic on each byte; with a 62-char
-// alphabet and crypto-grade entropy, the modulo bias is negligible for
-// 7-character codes and below.
+// cryptographically unpredictable. We use rejection sampling to eliminate
+// modulo bias, ensuring every character in the alphabet has an identical
+// uniform probability of selection.
 func Generate(length int) (string, error) {
 	if length <= 0 {
 		length = DefaultLength
 	}
-	buf := make([]byte, length)
-	if _, err := rand.Read(buf); err != nil {
-		return "", fmt.Errorf("codec: read random bytes: %w", err)
+	alphabetLen := len(Alphabet)
+	if alphabetLen == 0 {
+		return "", errors.New("codec: alphabet is empty")
 	}
+	// Rejection threshold to eliminate modulo bias:
+	// discard values >= maxValid so each alphabet character has an equal probability.
+	maxValid := byte(256 - (256 % alphabetLen))
+
 	out := make([]byte, length)
-	alphabetLen := byte(len(Alphabet))
-	for i, b := range buf {
-		out[i] = Alphabet[int(b)%int(alphabetLen)]
+	buf := make([]byte, length+(length/4)+1)
+	idx := 0
+
+	for idx < length {
+		if _, err := rand.Read(buf); err != nil {
+			return "", fmt.Errorf("codec: read random bytes: %w", err)
+		}
+		for _, b := range buf {
+			if b < maxValid {
+				out[idx] = Alphabet[int(b)%alphabetLen]
+				idx++
+				if idx == length {
+					break
+				}
+			}
+		}
 	}
 	return string(out), nil
 }
